@@ -29,16 +29,17 @@ import (
 )
 
 type Cronjob struct {
-	Name            string    `json:"name"`
-	Crontab         string    `json:"crontab"`
-	Isplainftp      bool      `json:"isplainftp"`
-	Ftpurl          string    `json:"ftpurl"`
-	Ftpport         string    `json:"ftpport"`
-	Ftpuser         string    `json:"ftpuser"`
-	Ftppass         string    `json:"ftppass"`
-	Foldername      string    `json:"foldername"`
-	Filename        string    `json:"filename"`
-	Downloadfolders []DownDir `json:"downloadfolders"`
+	Name             string    `json:"name"`
+	Crontab          string    `json:"crontab"`
+	Isplainftp       bool      `json:"isplainftp"`
+	Retryfirstfailed bool      `json:"retryfirstfailed"`
+	Ftpurl           string    `json:"ftpurl"`
+	Ftpport          string    `json:"ftpport"`
+	Ftpuser          string    `json:"ftpuser"`
+	Ftppass          string    `json:"ftppass"`
+	Foldername       string    `json:"foldername"`
+	Filename         string    `json:"filename"`
+	Downloadfolders  []DownDir `json:"downloadfolders"`
 }
 
 type DownDir struct {
@@ -95,13 +96,18 @@ func AddCronjob(cj Cronjob, c *cron.Cron, config Config) {
 				logger.Errorw("recovered panic in cronjob", "recover", r)
 			}
 		}()
-		logger.Errorw("backup start", "name", cj.Name)
+		logger.Infow("backup start", "name", cj.Name)
 		starttime := time.Now()
 		var err error
 		if cj.Isplainftp {
 			err = DownloadFTP(cj, config)
 		} else {
 			err = DownloadSFTP(cj, config)
+			if err != nil && cj.Retryfirstfailed {
+				logger.Errorw("backup failed, will retry in 5s", "name", cj.Name, "err", err)
+				time.Sleep(5 * time.Second)
+				err = DownloadSFTP(cj, config)
+			}
 		}
 		donetime := time.Now()
 		taken := donetime.Sub(starttime)
@@ -392,6 +398,7 @@ func main() {
 		c.Writer.Header().Set("Content-Type", "text/html")
 		fileCount, totalSize := GetFolderSize(config.Mainfolder)
 		ret := "<html><body style='font-family:Arial;'>"
+		ret += "<img width=128 height=128 style='border: 1px solid black;' src='https://luctus.at/logos/miyuki.png'><br>"
 		ret += "<h1>Miyuki</h1>"
 		ret += "JobCount: " + strconv.Itoa(len(config.Cronjobs)) + "<br>"
 		ret += "TotalSize: " + totalSize + "<br>"

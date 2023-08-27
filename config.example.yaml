@@ -18,6 +18,7 @@ Cronjobs:
     Ftpport: 5657
     Ftpuser: "test@example.com"
     Ftppass: abc123
+    Retryfirstfailed: true
     Foldername: server1
     Filename: bak_server1_web
     Downloadfolders:
@@ -29,6 +30,7 @@ Cronjobs:
     Ftpport: 22
     Ftpuser: "test2@example.com"
     Ftppass: "abc123"
+    Retryfirstfailed: true
     Foldername: server2
     Filename: bak_server2_home
     Downloadfolders:
@@ -45,6 +47,7 @@ Cronjobs:
     Ftpport: 22
     Ftpuser: me
     Ftppass: abc123
+    Retryfirstfailed: true
     Foldername: gmod
     Filename: bak_gmod_addons
     Downloadfolders:
