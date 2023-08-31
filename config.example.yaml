@@ -14,6 +14,7 @@ Cleanupmaxage: 744
 Cronjobs:
   - Name: MyWebBackup
     Crontab: "30 1 * * *"
+    Isplainftp: false #Is it FTP (21) or SFTP (22)
     Ftpurl: server1.example.com
     Ftpport: 5657
     Ftpuser: "test@example.com"
@@ -26,6 +27,7 @@ Cronjobs:
       - Name: "/etc/nginx"
   - Name: MyHomePictureBackup
     Crontab: "30 1 * * *"
+    Isplainftp: false
     Ftpurl: server2.example.com
     Ftpport: 22
     Ftpuser: "test2@example.com"
@@ -43,6 +45,7 @@ Cronjobs:
           - "*.webp"
   - Name: MyGarrysmodAddons
     Crontab: "30 1 * * *"
+    Isplainftp: false
     Ftpurl: game.example.com
     Ftpport: 22
     Ftpuser: me

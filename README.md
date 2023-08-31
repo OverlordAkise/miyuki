@@ -19,13 +19,15 @@ It was made with the intention of automating the backups of systems that do not 
 
 # Install
 
-Simply clone the repo, copy the config, edit it and run the server:
+Simply clone the repo, copy&edit the config, get the modules, build it and run the server:
 
 ```bash
 git clone https://github.com/OverlordAkise/miyuki.git
 cd miyuki
 cp config.example.yaml config.yaml
 # edit the config with e.g. vim
+go get .
+go build .
 ./miyuki
 ```
 
@@ -35,13 +37,20 @@ The backup folders will be automatically created according to your config.
 # TODO
 
  - Add prometheus monitoring support
- - Add FTP support (barely anyone uses it anymore)
 
 # Config
 
  - The `Retryfirstfailed` config parameter enables jobs who fail to be tried again after a 5s delay. This is because some SFTP servers I have encountered reset the first connection they get, so this helps with accessing those systems. (I don't know why this happens on their server, this is a workaround for my problem)
  - The black-/whitelist can consist of either a full name (`myfile.txt`) or a file ending wildcard (`*.txt`)
  - The blacklist blocks any folder or file from being downloaded. The whitelist only allows the files in the whitelist to be downloaded. The whitelist does NOT block folders from being downloaded, it only blocks files if they are not on the list.
+
+# About FTP
+
+The secsy/goftp library has been used instead of jlaffaye/ftp because (for whatever reason) the jlaffaye one disconnects after downloading 5 files with a 226 code. (A "success" code)
+
+The FTP download has been tested with a Port 21 listening FTP server that uses Explicit TLS and EPSV.
+
+From online sources it is highly recommended to use SFTP instead of FTP for transfering data.
 
 # Credits
 

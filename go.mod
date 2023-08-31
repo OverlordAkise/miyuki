@@ -7,6 +7,7 @@ require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/pkg/sftp v1.13.6
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/secsy/goftp v0.0.0-20200609142545-aa2de14babf4
 	go.uber.org/zap v1.25.0
 	golang.org/x/crypto v0.12.0
 	golang.org/x/exp v0.0.0-20230817173708-d852ddb80c63

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
-	//"os/exec"
 	"strings"
 	"time"
 	//Logging
@@ -23,6 +22,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	//FTP
+	"github.com/secsy/goftp"
 	//Statpage
 	"strconv"
 	"sync"
@@ -284,7 +285,103 @@ func DownloadSFTPFile(client *sftp.Client, remoteFilePath string, tarWriter *tar
 }
 
 func DownloadFTP(cj Cronjob, config Config) error {
+	//Log into nothing with io.Discard, other: os.Stderr
+	ftpconfig := goftp.Config{
+		User:               cj.Ftpuser,
+		Password:           cj.Ftppass,
+		ConnectionsPerHost: 2,
+		Timeout:            30 * time.Second,
+		Logger:             io.Discard,
+	}
 
+	client, err := goftp.DialConfig(ftpconfig, cj.Ftpurl+":"+cj.Ftpport)
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+
+	file, err := os.Create(filepath.Join(config.Mainfolder, cj.Foldername, cj.Filename+time.Now().Format("_20060102_1504")+".tar.gz"))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	gzipWriter := gzip.NewWriter(file)
+	defer gzipWriter.Close()
+
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+
+	for _, fold := range cj.Downloadfolders {
+		finfo, err := client.Stat(fold.Name)
+		if finfo.IsDir() {
+			err = DownloadFTPFolder(client, fold.Name, tarWriter, fold)
+			if err != nil {
+				return err
+			}
+		} else {
+			err = DownloadFTPFile(client, fold.Name, tarWriter, fold)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func DownloadFTPFolder(client *goftp.Client, remotePath string, tarWriter *tar.Writer, dd DownDir) error {
+
+	remoteFiles, err := client.ReadDir(remotePath)
+	if err != nil {
+		return err
+	}
+
+	for _, remoteFile := range remoteFiles {
+		name := remoteFile.Name()
+		remoteFilePath := filepath.Join(remotePath, name)
+		if remoteFile.IsDir() {
+			if !IsWanted(name, dd, true) {
+				continue
+			}
+			err = DownloadFTPFolder(client, remoteFilePath, tarWriter, dd)
+			if err != nil {
+				return err
+			}
+		} else {
+			if !IsWanted(name, dd, false) {
+				continue
+			}
+			err = DownloadFTPFile(client, remoteFilePath, tarWriter, dd)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func DownloadFTPFile(client *goftp.Client, remoteFilePath string, tarWriter *tar.Writer, dd DownDir) error {
+	info, err := client.Stat(remoteFilePath)
+	if err != nil {
+		return err
+	}
+
+	header := &tar.Header{
+		Name:    strings.TrimLeft(remoteFilePath, "/"),
+		Mode:    int64(info.Mode()),
+		Size:    info.Size(),
+		ModTime: info.ModTime(),
+	}
+	err = tarWriter.WriteHeader(header)
+	if err != nil {
+		return err
+	}
+
+	err = client.Retrieve(remoteFilePath, tarWriter)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -373,9 +470,6 @@ func main() {
 	}
 
 	for _, cj := range config.Cronjobs {
-		if cj.Isplainftp {
-			panic("A cronjob has Isplainftp set to true. FTP is not implemented yet.")
-		}
 		AddCronjob(cj, cr, config)
 		err = os.MkdirAll(filepath.Join(config.Mainfolder, cj.Foldername), 0755)
 		if err != nil {
