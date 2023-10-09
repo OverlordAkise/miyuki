@@ -27,6 +27,9 @@ import (
 	//Statpage
 	"strconv"
 	"sync"
+	//Web
+	"embed"
+	"html/template"
 )
 
 type Cronjob struct {
@@ -427,7 +430,11 @@ var logger *zap.SugaredLogger
 
 var LastStatus sync.Map
 
+//go:embed all:templates/*
+var templates embed.FS
+
 func main() {
+	VERSION := "2.0"
 	starttime := time.Now()
 	//read config
 	var config Config
@@ -486,27 +493,25 @@ func main() {
 	app.Use(ginzap.RecoveryWithZap(flogger, true))
 	app.Use(RequestLogger())
 	gin.DisableConsoleColor()
+	templ := template.Must(template.ParseFS(templates, "templates/*"))
+	app.SetHTMLTemplate(templ)
 
 	// Routes
 	app.GET("/", func(c *gin.Context) {
-		c.Writer.Header().Set("Content-Type", "text/html")
 		fileCount, totalSize := GetFolderSize(config.Mainfolder)
-		ret := "<html><body style='font-family:Arial;'>"
-		ret += "<img width=128 height=128 style='border: 1px solid black;' src='https://luctus.at/logos/miyuki.png'><br>"
-		ret += "<h1>Miyuki</h1>"
-		ret += "JobCount: " + strconv.Itoa(len(config.Cronjobs)) + "<br>"
-		ret += "TotalSize: " + totalSize + "<br>"
-		ret += "FileCount: " + fileCount + "<br>"
-		ret += "Last runs: <br>"
-		ret += "<table><tr><th>name</th><th>stat</th></tr>"
+		jobmap := make(map[string]string)
 		LastStatus.Range(func(key, value interface{}) bool {
-			ret += "<tr><td>" + key.(string) + "</td><td>" + value.(string) + "</td></tr>"
+			jobmap[key.(string)] = value.(string)
 			return true
 		})
-
-		ret += "</table></body></html>"
-
-		c.String(200, ret)
+		c.HTML(200, "stats", gin.H{
+			"Title":     "miyuki",
+			"Version":   VERSION,
+			"JobCount":  strconv.Itoa(len(config.Cronjobs)),
+			"Jobs":      jobmap,
+			"Totalsize": totalSize,
+			"Filecount": fileCount,
+		})
 	})
 
 	donetime := time.Now()

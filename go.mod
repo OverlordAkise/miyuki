@@ -1,6 +1,6 @@
 module luctus.at/miyuki
 
-go 1.21.0
+go 1.20
 
 require (
 	github.com/gin-contrib/zap v0.1.0
