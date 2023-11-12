@@ -54,4 +54,4 @@ From online sources it is highly recommended to use SFTP instead of FTP for tran
 
 # Credits
 
-The logo of miyuki has been drawn by the amazing 'HollyMoon' (Discord: hollymoon)
+The logo of miyuki has been drawn by the amazing 'HollyMoon' (Discord: delusion.l ~~hollymoon~~)
