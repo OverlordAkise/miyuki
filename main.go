@@ -140,7 +140,7 @@ func AddCleanupjob(c *cron.Cron, config Config) {
 			logger.Errorw("cleanup error, cleanupmaxage <= 0, safety cancel")
 			return
 		}
-		logger.Errorw("cleanup start")
+		logger.Infow("cleanup start")
 		starttime := time.Now()
 
 		err := filepath.Walk(config.Mainfolder, func(path string, info os.FileInfo, err error) error {
