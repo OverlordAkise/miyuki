@@ -458,10 +458,10 @@ func main() {
 		config.Loglocation,
 	}
 	flogger, err := cfg.Build()
-	logger = flogger.Sugar()
 	if err != nil {
 		panic(err)
 	}
+	logger = flogger.Sugar()
 	defer logger.Sync()
 
 	logger.Infow("Miyuki is starting up")
