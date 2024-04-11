@@ -11,7 +11,7 @@ import (
 	ginzap "github.com/gin-contrib/zap"
 	"go.uber.org/zap"
 	//Config file
-	"io/ioutil"
+	"os"
 	"sigs.k8s.io/yaml"
 	//SFTP
 	"archive/tar"
@@ -20,7 +20,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/exp/slices"
 	"io"
-	"os"
 	"path/filepath"
 	//FTP
 	"github.com/secsy/goftp"
@@ -211,6 +210,10 @@ func DownloadSFTP(cj Cronjob, config Config) error {
 
 	for _, fold := range cj.Downloadfolders {
 		finfo, err := client.Stat(fold.Name)
+		if err != nil {
+			fmt.Println("ERROR DURING sftp client.Stat", err)
+			continue
+		}
 		if finfo.IsDir() {
 			err = DownloadSFTPFolder(client, fold.Name, tarWriter, fold)
 			if err != nil {
@@ -317,6 +320,9 @@ func DownloadFTP(cj Cronjob, config Config) error {
 
 	for _, fold := range cj.Downloadfolders {
 		finfo, err := client.Stat(fold.Name)
+		if err != nil {
+			return err
+		}
 		if finfo.IsDir() {
 			err = DownloadFTPFolder(client, fold.Name, tarWriter, fold)
 			if err != nil {
@@ -438,7 +444,7 @@ func main() {
 	starttime := time.Now()
 	//read config
 	var config Config
-	configfile, err := ioutil.ReadFile("./config.yaml")
+	configfile, err := os.ReadFile("./config.yaml")
 	if err != nil {
 		panic(err)
 	}
@@ -462,7 +468,12 @@ func main() {
 		panic(err)
 	}
 	logger = flogger.Sugar()
-	defer logger.Sync()
+	defer func() {
+		err := logger.Sync()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	logger.Infow("Miyuki is starting up")
 
