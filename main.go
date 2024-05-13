@@ -25,6 +25,9 @@ import (
 	//Statpage
 	"strconv"
 	"sync"
+	//mysql
+	"bytes"
+	"os/exec"
 )
 
 type Cronjob struct {
@@ -41,6 +44,18 @@ type Cronjob struct {
 	Downloadfolders  []DownDir `json:"downloadfolders"`
 }
 
+type Mysqljob struct {
+	Name       string
+	Crontab    string
+	Foldername string
+	Filename   string
+	User       string
+	Pass       string
+	Host       string
+	Port       string
+	Database   string
+}
+
 type DownDir struct {
 	Name      string   `json:"name"`
 	Whitelist []string `json:"whitelist"`
@@ -48,13 +63,14 @@ type DownDir struct {
 }
 
 type Config struct {
-	Mainfolder     string    `json:"mainfolder"`
-	Listenport     string    `json:"listenport"`
-	Loglocation    string    `json:"loglocation"`
-	Cleanupenabled bool      `json:"cleanupenabled"`
-	Cleanupcron    string    `json:"cleanupcron"`
-	Cleanupmaxage  int       `json:"cleanupmaxage"`
-	Cronjobs       []Cronjob `json:"cronjobs"`
+	Mainfolder     string     `json:"mainfolder"`
+	Listenport     string     `json:"listenport"`
+	Loglocation    string     `json:"loglocation"`
+	Cleanupenabled bool       `json:"cleanupenabled"`
+	Cleanupcron    string     `json:"cleanupcron"`
+	Cleanupmaxage  int        `json:"cleanupmaxage"`
+	Cronjobs       []Cronjob  `json:"cronjobs"`
+	Mysqljobs      []Mysqljob `json:"mysqljobs"`
 }
 
 func IsWanted(name string, dd DownDir, isFolder bool) bool {
@@ -87,6 +103,39 @@ func UpdateStatus(name string, wasOk bool, timeTaken time.Duration) {
 	}
 }
 
+func AddMysqljob(mj Mysqljob, c *cron.Cron, config Config) {
+	logger.Info("Adding mysqljob", "name", mj.Name, "crontab", mj.Crontab)
+	_, err := c.AddFunc(mj.Crontab, func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("recovered panic in mysqljob", "recover", r)
+			}
+		}()
+		logger.Info("mysql backup start", "name", mj.Name)
+		command := fmt.Sprintf(`mysqldump -u %s -p%s -h %s -P %s --databases %s | gzip > %s/%s/bak_%s_$(date +\%%Y\%%m\%%d\%%H\%%M).sql.gz`, mj.User, mj.Pass, mj.Host, mj.Port, mj.Database, config.Mainfolder, mj.Foldername, mj.Filename)
+		ec := exec.Command("bash", "-c", command)
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		ec.Stdout = &stdout
+		ec.Stderr = &stderr
+		starttime := time.Now()
+		err := ec.Run()
+		timeTaken := time.Since(starttime)
+		outStr := stdout.String()
+		errStr := stderr.String()
+		if err != nil {
+			logger.Error("mysqldump error", "name", mj.Name, "timeTaken", timeTaken.String(), "stdout", outStr, "stderr", errStr, "err", err)
+			UpdateStatus(mj.Name, false, timeTaken)
+		} else {
+			logger.Info("mysqldump success", "name", mj.Name, "timeTaken", timeTaken.String(), "stdout", outStr, "stderr", errStr)
+			UpdateStatus(mj.Name, true, timeTaken)
+		}
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
 func AddCronjob(cj Cronjob, c *cron.Cron, config Config) {
 	logger.Info("Adding cronjob", "name", cj.Name, "crontab", cj.Crontab)
 	_, err := c.AddFunc(cj.Crontab, func() {
@@ -111,10 +160,10 @@ func AddCronjob(cj Cronjob, c *cron.Cron, config Config) {
 		donetime := time.Now()
 		taken := donetime.Sub(starttime)
 		if err != nil {
-			logger.Error("backup failed", "name", cj.Name, "err", err, "time", taken)
+			logger.Error("backup failed", "name", cj.Name, "err", err, "timeTaken", taken.String())
 			UpdateStatus(cj.Name, false, taken)
 		} else {
-			logger.Info("backup succeeded", "name", cj.Name, "err", "", "time", taken)
+			logger.Info("backup succeeded", "name", cj.Name, "err", "", "timeTaken", taken.String())
 			UpdateStatus(cj.Name, true, taken)
 		}
 	})
@@ -159,10 +208,10 @@ func AddCleanupjob(c *cron.Cron, config Config) {
 		donetime := time.Now()
 		taken := donetime.Sub(starttime)
 		if err != nil {
-			logger.Error("cleanup failed", "name", "cleanup", "err", err, "time", taken)
+			logger.Error("cleanup failed", "name", "cleanup", "err", err, "timeTaken", taken.String())
 			UpdateStatus("cleanup", false, taken)
 		} else {
-			logger.Info("cleanup succeeded", "name", "cleanup", "err", "", "time", taken)
+			logger.Info("cleanup succeeded", "name", "cleanup", "err", "", "timeTaken", taken.String())
 			UpdateStatus("cleanup", true, taken)
 		}
 	})
@@ -416,7 +465,7 @@ var logger *slog.Logger
 var LastStatus sync.Map
 
 func main() {
-	VERSION := "2.1"
+	VERSION := "3.0"
 	starttime := time.Now()
 	//read config
 	var config Config
@@ -462,7 +511,14 @@ func main() {
 			panic(err)
 		}
 		LastStatus.Store(cj.Name, "[NEY]")
-
+	}
+	for _, mj := range config.Mysqljobs {
+		AddMysqljob(mj, cr, config)
+		err = os.MkdirAll(filepath.Join(config.Mainfolder, mj.Foldername), 0755)
+		if err != nil {
+			panic(err)
+		}
+		LastStatus.Store(mj.Name, "[NEY]")
 	}
 	cr.Start()
 
