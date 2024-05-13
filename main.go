@@ -3,13 +3,12 @@ package main
 import (
 	//web and cron
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
+	"html/template"
+	"log/slog"
+	"net/http"
 	"strings"
 	"time"
-	//Logging
-	ginzap "github.com/gin-contrib/zap"
-	"go.uber.org/zap"
 	//Config file
 	"os"
 	"sigs.k8s.io/yaml"
@@ -26,9 +25,6 @@ import (
 	//Statpage
 	"strconv"
 	"sync"
-	//Web
-	"embed"
-	"html/template"
 )
 
 type Cronjob struct {
@@ -92,14 +88,14 @@ func UpdateStatus(name string, wasOk bool, timeTaken time.Duration) {
 }
 
 func AddCronjob(cj Cronjob, c *cron.Cron, config Config) {
-	logger.Infow("Adding cronjob", "name", cj.Name, "crontab", cj.Crontab)
+	logger.Info("Adding cronjob", "name", cj.Name, "crontab", cj.Crontab)
 	_, err := c.AddFunc(cj.Crontab, func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Errorw("recovered panic in cronjob", "recover", r)
+				logger.Error("recovered panic in cronjob", "recover", r)
 			}
 		}()
-		logger.Infow("backup start", "name", cj.Name)
+		logger.Info("backup start", "name", cj.Name)
 		starttime := time.Now()
 		var err error
 		if cj.Isplainftp {
@@ -107,7 +103,7 @@ func AddCronjob(cj Cronjob, c *cron.Cron, config Config) {
 		} else {
 			err = DownloadSFTP(cj, config)
 			if err != nil && cj.Retryfirstfailed {
-				logger.Errorw("backup failed, will retry in 5s", "name", cj.Name, "err", err)
+				logger.Error("backup failed, will retry in 5s", "name", cj.Name, "err", err)
 				time.Sleep(5 * time.Second)
 				err = DownloadSFTP(cj, config)
 			}
@@ -115,10 +111,10 @@ func AddCronjob(cj Cronjob, c *cron.Cron, config Config) {
 		donetime := time.Now()
 		taken := donetime.Sub(starttime)
 		if err != nil {
-			logger.Errorw("backup failed", "name", cj.Name, "err", err, "time", taken)
+			logger.Error("backup failed", "name", cj.Name, "err", err, "time", taken)
 			UpdateStatus(cj.Name, false, taken)
 		} else {
-			logger.Infow("backup succeeded", "name", cj.Name, "err", "", "time", taken)
+			logger.Info("backup succeeded", "name", cj.Name, "err", "", "time", taken)
 			UpdateStatus(cj.Name, true, taken)
 		}
 	})
@@ -128,18 +124,18 @@ func AddCronjob(cj Cronjob, c *cron.Cron, config Config) {
 }
 
 func AddCleanupjob(c *cron.Cron, config Config) {
-	logger.Infow("AddCleanup", "crontab", config.Cleanupcron, "maxagehours", config.Cleanupmaxage)
+	logger.Info("AddCleanup", "crontab", config.Cleanupcron, "maxagehours", config.Cleanupmaxage)
 	_, err := c.AddFunc(config.Cleanupcron, func() {
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Errorw("recovered panic in cleanup", "recover", r)
+				logger.Error("recovered panic in cleanup", "recover", r)
 			}
 		}()
 		if config.Cleanupmaxage <= 0 {
-			logger.Errorw("cleanup error, cleanupmaxage <= 0, safety cancel")
+			logger.Error("cleanup error, cleanupmaxage <= 0, safety cancel")
 			return
 		}
-		logger.Infow("cleanup start")
+		logger.Info("cleanup start")
 		starttime := time.Now()
 
 		err := filepath.Walk(config.Mainfolder, func(path string, info os.FileInfo, err error) error {
@@ -152,9 +148,9 @@ func AddCleanupjob(c *cron.Cron, config Config) {
 			if time.Since(info.ModTime()) > time.Duration(config.Cleanupmaxage)*time.Hour {
 				err := os.Remove(path)
 				if err != nil {
-					logger.Infow("cleanup error while deleteing file", "name", "cleanup", "file", path, "err", err)
+					logger.Error("cleanup error while deleteing file", "name", "cleanup", "file", path, "err", err)
 				} else {
-					logger.Infow("cleanup deleted file", "name", "cleanup", "file", path)
+					logger.Info("cleanup deleted file", "name", "cleanup", "file", path)
 				}
 			}
 			return nil
@@ -163,10 +159,10 @@ func AddCleanupjob(c *cron.Cron, config Config) {
 		donetime := time.Now()
 		taken := donetime.Sub(starttime)
 		if err != nil {
-			logger.Errorw("cleanup failed", "name", "cleanup", "err", err, "time", taken)
+			logger.Error("cleanup failed", "name", "cleanup", "err", err, "time", taken)
 			UpdateStatus("cleanup", false, taken)
 		} else {
-			logger.Infow("cleanup succeeded", "name", "cleanup", "err", "", "time", taken)
+			logger.Info("cleanup succeeded", "name", "cleanup", "err", "", "time", taken)
 			UpdateStatus("cleanup", true, taken)
 		}
 	})
@@ -394,23 +390,6 @@ func DownloadFTPFile(client *goftp.Client, remoteFilePath string, tarWriter *tar
 	return nil
 }
 
-// Logging
-func RequestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		c.Next()
-		t := time.Now()
-		logger.Infow("webrequest",
-			"url", c.Request.URL.String(),
-			"method", c.Request.Method,
-			"ret", c.Writer.Status(),
-			"ip", c.ClientIP(),
-			"duration", t.Sub(start),
-			"rsize", c.Writer.Size(),
-		)
-	}
-}
-
 func GetFolderSize(folder string) (string, string) {
 	var totalSize int64
 	var fileCount int
@@ -432,15 +411,12 @@ func GetFolderSize(folder string) (string, string) {
 	return strconv.Itoa(fileCount), strconv.FormatFloat(float64(totalSize)/1024/1024, 'f', 2, 64) + " MB"
 }
 
-var logger *zap.SugaredLogger
+var logger *slog.Logger
 
 var LastStatus sync.Map
 
-//go:embed all:templates/*
-var templates embed.FS
-
 func main() {
-	VERSION := "2.0"
+	VERSION := "2.1"
 	starttime := time.Now()
 	//read config
 	var config Config
@@ -459,32 +435,24 @@ func main() {
 	}
 
 	//Logger
-	cfg := zap.NewProductionConfig()
-	cfg.OutputPaths = []string{
-		config.Loglocation,
-	}
-	flogger, err := cfg.Build()
+	f, err := os.OpenFile(config.Loglocation, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	defer f.Close()
 	if err != nil {
+		fmt.Println("ERROR opening log file")
 		panic(err)
 	}
-	logger = flogger.Sugar()
-	defer func() {
-		err := logger.Sync()
-		if err != nil {
-			panic(err)
-		}
-	}()
+	logger = slog.New(slog.NewJSONHandler(f, nil))
 
-	logger.Infow("Miyuki is starting up")
+	logger.Info("Miyuki is starting up")
 
 	//CronJobs
 	cr := cron.New()
 	if config.Cleanupenabled {
-		logger.Infow("Cleanup job enabled")
+		logger.Info("Cleanup job enabled")
 		AddCleanupjob(cr, config)
 		LastStatus.Store("cleanup", "[NEY]")
 	} else {
-		logger.Infow("Cleanup job disabled")
+		logger.Info("Cleanup job disabled")
 	}
 
 	for _, cj := range config.Cronjobs {
@@ -499,23 +467,18 @@ func main() {
 	cr.Start()
 
 	//Webserver
-	gin.SetMode(gin.ReleaseMode)
-	app := gin.New()
-	app.Use(ginzap.RecoveryWithZap(flogger, true))
-	app.Use(RequestLogger())
-	gin.DisableConsoleColor()
-	templ := template.Must(template.ParseFS(templates, "templates/*"))
-	app.SetHTMLTemplate(templ)
+	tmpl := template.Must(template.New("stats").Parse(webTemplate))
 
 	// Routes
-	app.GET("/", func(c *gin.Context) {
+	http.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		logger.Info("webrequest", "url", r.URL.String(), "method", r.Method)
 		fileCount, totalSize := GetFolderSize(config.Mainfolder)
 		jobmap := make(map[string]string)
 		LastStatus.Range(func(key, value interface{}) bool {
 			jobmap[key.(string)] = value.(string)
 			return true
 		})
-		c.HTML(200, "stats", gin.H{
+		err := tmpl.ExecuteTemplate(w, "stats", map[string]interface{}{
 			"Title":     "miyuki",
 			"Version":   VERSION,
 			"JobCount":  strconv.Itoa(len(config.Cronjobs)),
@@ -523,10 +486,55 @@ func main() {
 			"Totalsize": totalSize,
 			"Filecount": fileCount,
 		})
+		if err != nil {
+			logger.Error("ERROR executing template", "err", err)
+		}
 	})
 
 	donetime := time.Now()
-	logger.Infow("miyuki started", "time", donetime.Sub(starttime), "port", config.Listenport)
+	logger.Info("miyuki started", "time", donetime.Sub(starttime), "port", config.Listenport)
 	fmt.Println("Miyuki started on port ", config.Listenport)
-	fmt.Println(app.Run(":" + config.Listenport))
+	logger.Error("http.ListenAndServe error", "err", http.ListenAndServe(":"+config.Listenport, nil))
 }
+
+var webTemplate = `<!DOCTYPE HTML>
+<html>
+    <head>
+    <title>{{.Title}}</title>
+    <link rel="icon" type="image/png" href="https://luctus.at/logos/miyuki.png">
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+    body{
+        margin:0;
+        font-family: Verdana, Arial;
+        background-color: GhostWhite;
+    }
+    #main{
+        margin: 0 auto;
+        width:1000px;
+        max-width: 95%;
+        margin-top: 70px;
+        padding: 5px;
+    }
+    td { font-family: consolas,monospace; }
+    </style>
+    </head>
+    <body>
+        <div id="main">
+            <img src="https://luctus.at/logos/miyuki.png" style="max-height:96px;border: 1px solid black;">
+            <h1>{{.Title}}</h1>
+            <p>Version: {{.Version}}<br><br>
+            Total size: {{.Totalsize}}<br>
+            Filecount: {{.Filecount}}<br><br>
+            Job count: {{.JobCount}}<br>
+            <table><tr><th>name</th><th>stat</th></tr>
+                {{range $k, $v := .Jobs}}
+                    <tr><td>{{$k}}</td><td>{{$v}}</td></tr>
+                {{end}}
+            </table>
+            </p>
+        </div>
+    </body>
+</html>
+`
