@@ -256,7 +256,7 @@ func DownloadSFTP(cj Cronjob, config Config) error {
 	for _, fold := range cj.Downloadfolders {
 		finfo, err := client.Stat(fold.Name)
 		if err != nil {
-			fmt.Println("ERROR DURING sftp client.Stat", err)
+			logger.Error("ERROR during sftp client.Stat", "err", err)
 			continue
 		}
 		if finfo.IsDir() {
@@ -487,7 +487,6 @@ func main() {
 	f, err := os.OpenFile(config.Loglocation, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	defer f.Close()
 	if err != nil {
-		fmt.Println("ERROR opening log file")
 		panic(err)
 	}
 	logger = slog.New(slog.NewJSONHandler(f, nil))
@@ -549,7 +548,6 @@ func main() {
 
 	donetime := time.Now()
 	logger.Info("miyuki started", "time", donetime.Sub(starttime), "port", config.Listenport)
-	fmt.Println("Miyuki started on port ", config.Listenport)
 	logger.Error("http.ListenAndServe error", "err", http.ListenAndServe(":"+config.Listenport, nil))
 }
 
